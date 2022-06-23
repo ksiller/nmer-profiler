@@ -11,12 +11,17 @@ module load blast
 
 export BLASTDB=/project/laurielab/nr-refs/
 
-TAXID=9606 # Homo sapiens
-FORMAT="qseqid qseq sseqid sseq slen qstart qend length mismatch gapopen gaps score evalue"
-FORMATCSV=$(echo ${FORMAT} | tr " " ",")
-SHORTOPTS="-word_size 2 -gapopen 9 -matrix PAM30 -threshold 16 -window_size 15 "
-EVALUE=4.7
+TASK_NO=$(printf "%04d" ${SLURM_ARRAY_TASK_ID})
 
+# set output dir and file, remove previous output file
+OUTPUTDIR="blastp-${SLURM_ARRAY_JOB_ID}"
+mkdir -p ${OUTPUTDIR}
+OUTPUTFILE="${OUTPUTDIR}/aligned-task-${TASK_NO}.txt"
+if [ -f "$OUTPUTFILE" ]; then
+    rm ${OUTPUTFILE}
+fi
+
+# set input file. Each line in input file should specify a fasta file with 1 or more amino acid sequences 
 DEFFILE="input.txt"
 AAFILE=${1:-$DEFFILE}
 if [ ! -f "$AAFILE" ]; then
@@ -24,17 +29,20 @@ if [ ! -f "$AAFILE" ]; then
     exit
 fi
 
-TASK_NO=$(printf "%04d" ${SLURM_ARRAY_TASK_ID})
+# set TAXON and create list of species TAXIDS
+DEFTAXID=9443 # 9443:primates; 9606:Homo sapiens; 32524:Amniota
+TAXID=${2:-$DEFTAXID}
+TAXIDS_FILE="${OUTPUTDIR}/${TAXID}.taxids"
+get_species_taxids.sh -t ${TAXID} > ${TAXIDS_FILE}
 
-# set output dir and file, remove previous output file
-OUTPUTDIR="blastp-${SLURM_ARRAY_JOB_ID}"
-mkdir -p ${OUTPUTDIR}
-OUTPUTFILE=${OUTPUTDIR}/aligned-task-${TASK_NO}.txt
-if [ -f "$OUTPUTFILE" ]; then
-    rm ${OUTPUTFILE}
-fi
+# set output format and e-value cutoff
+FORMAT="qseqid qseq sseqid sseq slen qstart qend length mismatch gapopen gaps score evalue"
+FORMATCSV=$(echo ${FORMAT} | tr " " ",")
+SHORTOPTS="-word_size 2 -gapopen 9 -matrix PAM30 -threshold 16 -window_size 15 "
+EVALUE=4.7
 
-interval=1                                        # defines # of input sequences to process
+# process one fasta file per task
+interval=1                                        # defines # of fasta files to process
 start=$(( $SLURM_ARRAY_TASK_ID * $interval ))     # start line in AAFILE for first sequence
 end=$(( $start + $interval - 1 ))                 # end line in AAFILE for last sequence
 
@@ -47,13 +55,17 @@ for i in $(seq $start $end); do
         break
     fi
     aa=$( sed "${i}q;d" $AAFILE)
-    echo "Blast results for: ${aa}" >> ${OUTPUTFILE}
-    echo ${FORMATCSV} >> ${OUTPUTFILE}
-    blastp ${SHORTOPTS} \
+    if [ ! -f "$aa" ]; then
+        echo "File $aa not found."
+    else
+        echo "Blast results for: ${aa}, TAXID=${TAXID}" >> ${OUTPUTFILE}
+        echo ${FORMATCSV} >> ${OUTPUTFILE}
+        blastp ${SHORTOPTS} \
            -num_threads ${SLURM_CPUS_PER_TASK} \
+           -taxidlist ${TAXIDS_FILE} \
            -query ${aa} \
            -db nr \
            -evalue ${EVALUE} \
-           -taxids ${TAXID} \
            -outfmt "10 ${FORMAT}" >> ${OUTPUTFILE}
+    fi
 done

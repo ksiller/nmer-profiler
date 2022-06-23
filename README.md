@@ -50,6 +50,6 @@ The last command outputs the number of lines in the `input.txt` file and stores 
 For efficient processing we will launch a job array on an HPC cluster. The array size matches the `FILE_NO`. The blastp.slurm job script assumes that cluster resource are managed through [SLURM](https://slurm.schedmd.com) and that the `blastp` program is available as an [lmod](https://lmod.readthedocs.io/en/latest/) module.
 
 ```
-sbatch --array=1-${FILENO} blastp.slurm input.txt
+sbatch --array=1-${FILE_NO} blastp.slurm input.txt
 ```
 
